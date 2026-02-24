@@ -48,6 +48,9 @@ async function loadData() {
       fetch(`${BASE_API}/blocklist.json`)
     ]);
 
+
+    
+
     channels = await chRes.json();
     streams = await stRes.json();
     const blocklist = await blRes.json();
@@ -147,7 +150,6 @@ document.getElementById("playBtn").addEventListener("click", () => {
     video.play();
   }
 });
-
 loadData();
 </script>
 
