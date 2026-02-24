@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <title>Free IPTV Player</title>
   <style>
-    body { font-family: Arial; margin: 20px; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
     select, button { padding: 6px; margin: 5px 0; }
+    #videoContainer { margin-top: 20px; }
     video { width: 100%; max-width: 900px; height: 500px; background: black; }
     #status { margin-top: 10px; color: red; }
   </style>
@@ -14,13 +15,18 @@
 
 <h1>Free IPTV Player</h1>
 
-<select id="countrySelect"><option>Loading countries...</option></select><br>
+<label>Country:</label>
+<select id="countrySelect"><option>Loading...</option></select><br>
+
+<label>Category:</label>
 <select id="categorySelect"><option>Select country first</option></select><br>
+
+<label>Channel:</label>
 <select id="channelSelect"><option>Select category first</option></select><br>
 
-<button id="playBtn">Play</button>
+<button id="playBtn">Play Selected Channel</button>
 
-<div>
+<div id="videoContainer">
   <video id="player" controls></video>
   <div id="status"></div>
 </div>
@@ -29,6 +35,8 @@
 
 <script>
 const BASE_API = "https://iptv-org.github.io/api";
+const WORKER_PROXY = "https://cool-lake-9a4e.innovision72.workers.dev";
+
 let channels = [];
 let streams = [];
 let blocked = new Set();
@@ -37,8 +45,8 @@ let hls = null;
 const countrySelect = document.getElementById("countrySelect");
 const categorySelect = document.getElementById("categorySelect");
 const channelSelect = document.getElementById("channelSelect");
-const statusDiv = document.getElementById("status");
 const video = document.getElementById("player");
+const statusDiv = document.getElementById("status");
 
 async function loadData() {
   try {
@@ -48,24 +56,18 @@ async function loadData() {
       fetch(`${BASE_API}/blocklist.json`)
     ]);
 
-
-    
-
     channels = await chRes.json();
     streams = await stRes.json();
-    const blocklist = await blRes.json();
-
-    blocked = new Set(blocklist.map(b => b.channel));
-
-    console.log("Channels:", channels.length);
-    console.log("Streams:", streams.length);
+    blocked = new Set((await blRes.json()).map(b => b.channel));
 
     const countries = [...new Set(channels.map(c => c.country).filter(Boolean))].sort();
     countrySelect.innerHTML = "<option value=''>Select Country</option>";
-
     countries.forEach(c => {
       countrySelect.innerHTML += `<option value="${c}">${c}</option>`;
     });
+
+    console.log("Channels:", channels.length);
+    console.log("Streams:", streams.length);
 
   } catch (err) {
     statusDiv.textContent = "Failed to load IPTV data";
@@ -100,9 +102,9 @@ categorySelect.addEventListener("change", () => {
   channelSelect.innerHTML = "<option value=''>Select Channel</option>";
 
   filtered.sort((a,b)=>a.name.localeCompare(b.name))
-  .forEach(c => {
-    channelSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-  });
+    .forEach(c => {
+      channelSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    });
 });
 
 function getStreams(channelId) {
@@ -128,7 +130,7 @@ document.getElementById("playBtn").addEventListener("click", () => {
     return;
   }
 
-  const streamURL = `/api/proxy?url=${encodeURIComponent(available[0].url)}`;
+  const streamURL = `${WORKER_PROXY}?url=${encodeURIComponent(available[0].url)}`;
 
   if (hls) {
     hls.destroy();
@@ -138,18 +140,24 @@ document.getElementById("playBtn").addEventListener("click", () => {
     hls = new Hls();
     hls.loadSource(streamURL);
     hls.attachMedia(video);
+
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play();
       statusDiv.textContent = "";
     });
+
     hls.on(Hls.Events.ERROR, () => {
       statusDiv.textContent = "Error playing stream";
     });
-  } else {
+
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = streamURL;
     video.play();
+  } else {
+    statusDiv.textContent = "HLS not supported";
   }
 });
+
 loadData();
 </script>
 
