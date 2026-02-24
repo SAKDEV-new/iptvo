@@ -1,0 +1,7 @@
+{
+  "name": "iptv-pages",
+  "version": "1.0.0",
+  "devDependencies": {
+    "wrangler": "^4.67.0"
+  }
+}

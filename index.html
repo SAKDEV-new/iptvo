@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Free IPTV Player</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    select, button { padding: 5px; margin: 5px 0; }
+    #videoContainer { margin-top: 20px; }
+    video { width: 100%; max-width: 800px; height: 450px; background: black; }
+    #status { margin-top: 10px; color: red; }
+  </style>
+</head>
+<body>
+
+<h1>Free IPTV Player</h1>
+
+<label>Select Country:</label>
+<select id="countrySelect"><option value="">--Loading--</option></select>
+<br>
+
+<label>Select Category:</label>
+<select id="categorySelect"><option value="">--Select Country First--</option></select>
+<br>
+
+<label>Select Channel:</label>
+<select id="channelSelect"><option value="">--Select Category First--</option></select>
+<br>
+
+<button id="playBtn">Play Selected Channel</button>
+
+<div id="videoContainer">
+  <video id="player" controls></video>
+  <div id="status"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.0/dist/hls.min.js"></script>
+
+<script>
+const BASE_API = "https://iptv-org.github.io/api";
+const CHANNELS_URL = `${BASE_API}/channels.json`;
+const STREAMS_URL = `${BASE_API}/streams.json`;
+const BLOCKLIST_URL = `${BASE_API}/blocklist.json`;
+
+let channels = [];
+let streams = [];
+let blocked = new Set();
+let hlsInstance = null;
+
+const countrySelect = document.getElementById("countrySelect");
+const categorySelect = document.getElementById("categorySelect");
+const channelSelect = document.getElementById("channelSelect");
+const playBtn = document.getElementById("playBtn");
+const statusDiv = document.getElementById("status");
+const video = document.getElementById("player");
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  return await res.json();
+}
+
+async function loadData() {
+  try {
+    channels = await fetchJSON(CHANNELS_URL);
+    streams = await fetchJSON(STREAMS_URL);
+    const blocklist = await fetchJSON(BLOCKLIST_URL);
+    blocked = new Set(blocklist.map(b => b.channel));
+
+    const countries = [...new Set(channels.map(ch => ch.country).filter(Boolean))].sort();
+    countrySelect.innerHTML = '<option value="">--Select Country--</option>';
+    countries.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      countrySelect.appendChild(opt);
+    });
+  } catch (err) {
+    statusDiv.textContent = "Error loading IPTV data";
+  }
+}
+
+function populateCategories() {
+  const country = countrySelect.value;
+  if (!country) {
+    categorySelect.innerHTML = '<option value="">--Select Country First--</option>';
+    return;
+  }
+
+  const catSet = new Set();
+  channels
+    .filter(ch => ch.country === country)
+    .forEach(ch => ch.categories?.forEach(cat => catSet.add(cat)));
+
+  categorySelect.innerHTML = '<option value="">--Select Category--</option>';
+  [...catSet].sort().forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    categorySelect.appendChild(opt);
+  });
+}
+
+function populateChannels() {
+  const country = countrySelect.value;
+  const category = categorySelect.value;
+
+  if (!country || !category) {
+    channelSelect.innerHTML = '<option value="">--Select Category First--</option>';
+    return;
+  }
+
+  const filtered = channels.filter(ch =>
+    ch.country === country &&
+    ch.categories?.includes(category) &&
+    !blocked.has(ch.id)
+  );
+
+  channelSelect.innerHTML = '<option value="">--Select Channel--</option>';
+  filtered
+    .sort((a,b)=>a.name.localeCompare(b.name))
+    .forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch.id;
+      opt.textContent = ch.name;
+      channelSelect.appendChild(opt);
+    });
+}
+
+function getStreamsForChannel(channelId) {
+  return streams.filter(s => s.channel === channelId);
+}
+
+async function playChannel() {
+  const channelId = channelSelect.value;
+
+  if (!channelId) {
+    statusDiv.textContent = "Please select a channel";
+    return;
+  }
+
+  const chStreams = getStreamsForChannel(channelId);
+  if (!chStreams.length) {
+    statusDiv.textContent = "No streams available";
+    return;
+  }
+
+  const stream = chStreams[0];
+  const streamURL = `/api/proxy?url=${encodeURIComponent(stream.url)}`;
+
+  if (hlsInstance) {
+    hlsInstance.destroy();
+    hlsInstance = null;
+  }
+
+  if (Hls.isSupported()) {
+    hlsInstance = new Hls();
+    hlsInstance.loadSource(streamURL);
+    hlsInstance.attachMedia(video);
+
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+      video.play();
+      statusDiv.textContent = "";
+    });
+
+    hlsInstance.on(Hls.Events.ERROR, function() {
+      statusDiv.textContent = "Error playing stream";
+    });
+
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = streamURL;
+    video.play();
+  } else {
+    statusDiv.textContent = "HLS not supported in this browser";
+  }
+}
+
+countrySelect.addEventListener("change", () => {
+  populateCategories();
+  channelSelect.innerHTML = '<option value="">--Select Category First--</option>';
+});
+
+categorySelect.addEventListener("change", populateChannels);
+playBtn.addEventListener("click", playChannel);
+
+loadData();
+</script>
+
+</body>
+</html>
